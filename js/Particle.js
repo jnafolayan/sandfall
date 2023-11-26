@@ -12,10 +12,8 @@ class Particle {
     this.width = width;
     this.height = height;
     this.hue = hue;
-  }
 
-  render(ctx) {
-    ctx.fillStyle = `hsl(${this.hue}, 100%, 45%)`;
-    ctx.fillRect(this.x, this.y, this.width, this.height);
+    this.vx = 0;
+    this.vy = 0;
   }
 }
