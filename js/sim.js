@@ -1,7 +1,6 @@
 
 const GID = generateUUID();
 const CELL_SIZE = 10;
-const GRAVITY = 50;
 
 /**
  * @type {Container}
@@ -14,6 +13,8 @@ let lastTime = 0;
 let mouseDown = false;
 
 window.onload = start;
+
+localStorage.clear();
 
 function start() {
   width = window.innerWidth;
@@ -30,7 +31,7 @@ function start() {
   grabContainers();
   upsertContainerSelf();
 
-  window.onunload = () => localStorage.clear();
+  // window.onunload = () => localStorage.clear();
 
   window.addEventListener("mousedown", () => {
     mouseDown = true;
@@ -55,8 +56,6 @@ function grabContainers() {
   } catch (e) {
     containers = [];
   }
-
-  getContainerSelf();
 }
 
 function getContainerSelf() {
@@ -78,6 +77,8 @@ function constructContainerSelf() {
     width: window.outerWidth,
     height: window.outerHeight,
     receiving: [],
+    received: [],
+    collisions: [],
   };
 }
 
@@ -102,32 +103,47 @@ function saveContainers() {
   localStorage.setItem("containers", JSON.stringify(containers));
 }
 
-function update(dt) {
-
-  checkWorld();
-  
+function update(dt) {  
   // Check if we're receiving any particles
   const cSelf = getContainerSelf();
   for (const p of cSelf.receiving) {
-    const x = p[0] - cSelf.x;
-    const y = p[1] - cSelf.y - cSelf.yOffset;
+    const [px, py, pcell, psrc] = p;
+    const x = px - cSelf.x;
+    const y = py - cSelf.y - cSelf.yOffset;
 
-    emitParticle(
+    const src = containers.find(c => c.id === psrc);
+    if (!src) continue;
+
+    const placed = emitParticle(
       Math.max(0, Math.min(width, x)), 
       Math.max(0, Math.min(height, y)),
-      p[2]);
+      pcell.hue);
+      
+    if (placed) {
+      src.received.push([pcell.row, pcell.col, pcell.id]);
+    }
   }
 
   cSelf.receiving.length = 0;
 
+  for (const [row, col, id] of cSelf.received) {
+    const cell = cellAt(row, col);
+    if (cell === null) continue;
+    if (cell.id !== id) continue;
+    grid[row][col] = null;
+  }
+
+  cSelf.received.length = 0;
+
   for (let row = rows - 1; row >= 0; row--) {
     for (let col = cols - 1; col >= 0; col--) {
       if (cellAt(row, col) != null) {
-        updateParticle(cellAt(row, col));
+        updateParticle(cellAt(row, col), dt);
       }
     }
   }
 
+  checkWorld();
 }
 
 
@@ -147,72 +163,96 @@ function animate(time) {
   const dt = Math.min(1000, (time - (lastTime || 0))) / 1000;
   lastTime = time;
 
-  grabContainers();
+  navigator.locks.request("update", async () => {
+    grabContainers();
+    update(dt);
+    upsertContainerSelf();
+  }).then(() => {
 
-  update(dt);
-  render();
-  requestAnimationFrame(animate);
-
-  upsertContainerSelf();
+    render();
+  
+    requestAnimationFrame(animate);
+  });
+  
 }
 
 function checkWorld() {
   const otherContainers = containers.filter(c => c.id !== GID);
   const cSelf = getContainerSelf();
+
+  let marked = {};
+  const pad = 100;
+
   // Check for collisions
   for (const c of otherContainers) {
-    if (intersects(cSelf, c)) {
+    // Dont collide with another container more than once
+    if (cSelf.collisions.includes(c.id)) continue;
+
+    const oldReceivingCount = c.receiving.length;
+
+    if (intersects(cSelf, c)) {      
       const bounds = {
-        bottom: c.y > cSelf.y,
-        left: c.x < cSelf.x,
-        right: c.x + c.width > cSelf.x + cSelf.width,
+        bottom: c.y > cSelf.y && (cSelf.y + cSelf.height) - c.y <= pad,
+        left: c.x < cSelf.x && (c.x + c.width) - c.x <= pad,
+        right: c.x + c.width > cSelf.x + cSelf.width && (cSelf.x + cSelf.width) - c.x <= pad,
       };
 
       if (bounds.bottom) {
         for (let col = 0; col < cols; col++) {
           const cell = cellAt(rows - 1, col);
-          if (cell !== null) {
+          if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
             const cellX = cell.col * CELL_SIZE + cSelf.x;
             const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
             if (pointInRect(cellX, cellY, c)) {
-              c.receiving.push([cellX, cellY, cell.hue]);
-              grid[cell.row][cell.col] = null;
+              c.receiving.push([cellX, cellY, cell, GID]);
+              marked[`${cell.row}_${cell.col}`] = true;
             }
           }
         }
       }
 
-      if (bounds.left) {
-        for (let row = 0; row < rows; row++) {
-          const cell = cellAt(row, 0);
-          if (cell !== null) {
-            const cellX = cell.col * CELL_SIZE + cSelf.x;
-            const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
-            if (pointInRect(cellX, cellY, c)) {
-              c.receiving.push([cellX, cellY, cell.hue]);
-              grid[cell.row][cell.col] = null;
-            }
-          }
-        }
-      }
+      // if (bounds.left) {
+      //   for (let row = 0; row < rows; row++) {
+      //     const cell = cellAt(row, 0);
+      //     if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
+      //       const cellX = cell.col * CELL_SIZE + cSelf.x;
+      //       const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
+      //       if (pointInRect(cellX, cellY, c)) {
+      //         c.receiving.push([cellX, cellY, cell, GID]);
+      //         marked[`${cell.row}_${cell.col}`] = true;
+      //         // grid[cell.row][cell.col] = null;
+      //       }
+      //     }
+      //   }
+      // }
 
-      if (bounds.right) {
-        for (let row = 0; row < rows; row++) {
-          const cell = cellAt(row, cols - 1);
-          if (cell !== null) {
-            const cellX = cell.col * CELL_SIZE + cSelf.x;
-            const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
-            if (pointInRect(cellX, cellY, c)) {
-              c.receiving.push([cellX, cellY, cell.hue]);
-              grid[cell.row][cell.col] = null;
-            }
-          }
-        }
-      }
+      // if (bounds.right) {
+      //   for (let row = 0; row < rows; row++) {
+      //     const cell = cellAt(row, cols - 1);
+      //     if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
+      //       const cellX = cell.col * CELL_SIZE + cSelf.x;
+      //       const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
+      //       if (pointInRect(cellX, cellY, c)) {
+      //         c.receiving.push([cellX, cellY, cell, GID]);
+      //         marked[`${cell.row}_${cell.col}`] = true;
+      //         // grid[cell.row][cell.col] = null;
+      //       }
+      //     }
+      //   }
+      // }
+
 
       // break;
     }
+
+    if (oldReceivingCount != c.receiving.length) {
+      c.collisions.push(GID);
+      c.collisions = [...new Set(c.collisions)];
+    }
   }
+
+  marked = null;
+  cSelf.collisions.length = 0;
 }
 
 function pointInRect(x, y, rect) {
@@ -234,8 +274,10 @@ function cellAt(row, col) {
   return grid[row][col];
 }
 
+let PID = 0;
 function createParticle(row, col, hue) {
   return {
+    id: PID++,
     row,
     col,
     hue
@@ -247,10 +289,19 @@ function emitParticle(x, y, hue) {
   let col = Math.floor(x / CELL_SIZE);
   let placed = false;
 
-  while (isInBounds(row, col)) {
+  if (isInBounds(row, col) && cellAt(row, col) === null) {
+    const p = createParticle(row, col, hue || Math.floor(col / cols * 80));
+    grid[p.row][p.col] = p;
+    placed = true;
+  }
+
+  return placed;
+
+  while (!placed && isInBounds(row, col)) {
     if (cellAt(row, col) === null) {
       const p = createParticle(row, col, hue || Math.floor(col / cols * 250));
       grid[p.row][p.col] = p;
+      placed = true;
       break;
     } else {
       const positions = [
@@ -261,19 +312,16 @@ function emitParticle(x, y, hue) {
       placed = positions.some(([trow, tcol]) => {
         if (cellAt(trow, tcol) === null) {
           const p = createParticle(trow, tcol, hue || Math.floor(col / cols * 250));
-          moveParticleTo(p, trow, tcol);
-          return true;
+          return moveParticleTo(p, trow, tcol);
         }
         return false;
       });
-
-      if (placed) {
-        break;
-      }
     }
     
     row--;
   }
+
+  return placed;
 }
 
 function renderParticle(ctx, p) {
@@ -281,7 +329,7 @@ function renderParticle(ctx, p) {
   ctx.fillRect(p.col * CELL_SIZE, p.row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
 }
 
-function updateParticle(p) {
+function updateParticle(p, dt) {
   if (p.type === "solid") return;
 
   const positions = [
@@ -299,6 +347,28 @@ function updateParticle(p) {
     }
     return false;
   });
+
+  const neighbors = [
+    // [p.row - 1, p.col - 1],
+    // [p.row - 1, p.col],
+    // [p.row - 1, p.col + 1],
+    [p.row, p.col - 1],
+    [p.row, p.col + 1],
+    [p.row + 1, p.col - 1],
+    [p.row + 1, p.col],
+    [p.row + 1, p.col + 1],
+  ];
+
+  let hueSum = p.hue, count = 1;
+  neighbors.forEach(([row, col]) => {
+    if (cellAt(row, col) !== null) {
+      hueSum += cellAt(row, col).hue;
+      count++;
+    }
+  });
+
+  const avgHue = hueSum / count;
+  p.hue = Math.floor(p.hue + (avgHue - p.hue) * 50 * dt) % 360;
 }
 
 function moveParticleTo(p, trow, tcol) {
@@ -307,7 +377,9 @@ function moveParticleTo(p, trow, tcol) {
     grid[trow][tcol] = p;
     p.row = trow;
     p.col = tcol;
+    return true;
   }
+  return false;
 }
 
 function makeGrid() {
