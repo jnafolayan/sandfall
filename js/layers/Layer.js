@@ -1,12 +1,13 @@
 class Layer {
   /**
-   * 
+   * @param {string} id
    * @param {number} x 
    * @param {number} y 
    * @param {number} width 
    * @param {number} height 
    */
-  constructor(x, y, width, height) {
+  constructor(id, x, y, width, height) {
+    this.id = id;
     this.x = x;
     this.y = y;
     this.width = width;
@@ -22,7 +23,7 @@ class Layer {
    * Opens a new window to represent this layer.
    * @returns {boolean} 'true' if window was created; 'false', otherwise.
    */
-  open() {
+  initialise() {
     const windowFeatures = this._getWindowFeatures();
     this.handle = window.open(".", "_blank", windowFeatures);
     return this.handle !== null;
