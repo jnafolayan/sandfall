@@ -1,6 +1,7 @@
 
 const GID = generateUUID();
-const CELL_SIZE = 10;
+const CELL_SIZE = 8;
+const HUE_RANGE = [Math.random() * 350, Math.random() * 350].sort();
 
 /**
  * @type {Container}
@@ -8,6 +9,7 @@ const CELL_SIZE = 10;
 let containers;
 let width, height, grid, rows, cols;
 let canvas, ctx;
+let shakeX = 0, shakeY = 0;
 
 let lastTime = 0;
 let mouseDown = false;
@@ -159,10 +161,23 @@ function render() {
   }
 }
 
+
+let oldX = window.screenX;
+let oldY = window.screenY;
+
 function animate(time) {
   const dt = Math.min(1000, (time - (lastTime || 0))) / 1000;
   lastTime = time;
 
+  shakeX += window.screenX - oldX;
+  shakeY += oldY - window.screenY;
+  shakeX *= 0.9;
+  shakeY *= 0.8;
+  if (Math.abs(shakeX) < 10) shakeX = 0;
+  if (Math.abs(shakeY) < 10) shakeY = 0;
+
+  oldX = window.screenX;
+  oldY = window.screenY;
   navigator.locks.request("update", async () => {
     grabContainers();
     update(dt);
@@ -181,7 +196,6 @@ function checkWorld() {
   const cSelf = getContainerSelf();
 
   let marked = {};
-  const pad = 100;
 
   // Check for collisions
   for (const c of otherContainers) {
@@ -192,9 +206,9 @@ function checkWorld() {
 
     if (intersects(cSelf, c)) {      
       const bounds = {
-        bottom: c.y > cSelf.y && (cSelf.y + cSelf.height) - c.y <= pad,
-        left: c.x < cSelf.x && (c.x + c.width) - c.x <= pad,
-        right: c.x + c.width > cSelf.x + cSelf.width && (cSelf.x + cSelf.width) - c.x <= pad,
+        bottom: c.y > cSelf.y,
+        left: c.x < cSelf.x,
+        right: c.x + c.width > cSelf.x + cSelf.width,
       };
 
       if (bounds.bottom) {
@@ -211,38 +225,33 @@ function checkWorld() {
         }
       }
 
-      // if (bounds.left) {
-      //   for (let row = 0; row < rows; row++) {
-      //     const cell = cellAt(row, 0);
-      //     if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
-      //       const cellX = cell.col * CELL_SIZE + cSelf.x;
-      //       const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
-      //       if (pointInRect(cellX, cellY, c)) {
-      //         c.receiving.push([cellX, cellY, cell, GID]);
-      //         marked[`${cell.row}_${cell.col}`] = true;
-      //         // grid[cell.row][cell.col] = null;
-      //       }
-      //     }
-      //   }
-      // }
+      if (bounds.left) {
+        for (let row = 0; row < rows; row++) {
+          const cell = cellAt(row, 0);
+          if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
+            const cellX = cell.col * CELL_SIZE + cSelf.x;
+            const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
+            if (pointInRect(cellX, cellY, c)) {
+              c.receiving.push([cellX, cellY, cell, GID]);
+              marked[`${cell.row}_${cell.col}`] = true;
+            }
+          }
+        }
+      }
 
-      // if (bounds.right) {
-      //   for (let row = 0; row < rows; row++) {
-      //     const cell = cellAt(row, cols - 1);
-      //     if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
-      //       const cellX = cell.col * CELL_SIZE + cSelf.x;
-      //       const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
-      //       if (pointInRect(cellX, cellY, c)) {
-      //         c.receiving.push([cellX, cellY, cell, GID]);
-      //         marked[`${cell.row}_${cell.col}`] = true;
-      //         // grid[cell.row][cell.col] = null;
-      //       }
-      //     }
-      //   }
-      // }
-
-
-      // break;
+      if (bounds.right) {
+        for (let row = 0; row < rows; row++) {
+          const cell = cellAt(row, cols - 1);
+          if (cell !== null && !marked[`${cell.row}_${cell.col}`]) {
+            const cellX = cell.col * CELL_SIZE + cSelf.x;
+            const cellY = cell.row * CELL_SIZE + cSelf.y + cSelf.yOffset;
+            if (pointInRect(cellX, cellY, c)) {
+              c.receiving.push([cellX, cellY, cell, GID]);
+              marked[`${cell.row}_${cell.col}`] = true;
+            }
+          }
+        }
+      }
     }
 
     if (oldReceivingCount != c.receiving.length) {
@@ -278,9 +287,10 @@ let PID = 0;
 function createParticle(row, col, hue) {
   return {
     id: PID++,
+    rand: Math.random(),
     row,
     col,
-    hue
+    hue,
   };
 }
 
@@ -290,7 +300,7 @@ function emitParticle(x, y, hue) {
   let placed = false;
 
   if (isInBounds(row, col) && cellAt(row, col) === null) {
-    const p = createParticle(row, col, hue || Math.floor(col / cols * 80));
+    const p = createParticle(row, col, hue || Math.floor(HUE_RANGE[0] + (col / cols) * HUE_RANGE[1] - HUE_RANGE[0]));
     grid[p.row][p.col] = p;
     placed = true;
   }
@@ -336,9 +346,9 @@ function updateParticle(p, dt) {
     [p.row + 1, p.col],
     [p.row + 1, p.col + 1],
     [p.row + 1, p.col - 1],
-    // [p.row, p.col + 1],
-    // [p.row, p.col - 1],
-  ];
+    p.rand < .5 ? null :
+      p.rand < .8 ? [p.row, p.col + 1] : [p.row, p.col - 1],
+  ].filter(Boolean);
 
   const couldMove = positions.some(([trow, tcol]) => {
     if (cellAt(trow, tcol) === null) {
@@ -347,6 +357,7 @@ function updateParticle(p, dt) {
     }
     return false;
   });
+
 
   const neighbors = [
     // [p.row - 1, p.col - 1],
@@ -368,7 +379,7 @@ function updateParticle(p, dt) {
   });
 
   const avgHue = hueSum / count;
-  p.hue = Math.floor(p.hue + (avgHue - p.hue) * 50 * dt) % 360;
+  p.hue = Math.floor(p.hue + (avgHue - p.hue) * 0. * dt) % 360;
 }
 
 function moveParticleTo(p, trow, tcol) {
