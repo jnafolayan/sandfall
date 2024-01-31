@@ -3,9 +3,6 @@ const GID = generateUUID();
 const CELL_SIZE = 8;
 const HUE_RANGE = [Math.random() * 350, Math.random() * 350].sort();
 
-/**
- * @type {Container}
- */
 let containers;
 let width, height, grid, rows, cols;
 let canvas, ctx;
