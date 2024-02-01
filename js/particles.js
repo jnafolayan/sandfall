@@ -2,7 +2,7 @@ let PID = 0;
 function createParticle(row, col, hue) {
   return {
     id: PID++,
-    rand: Math.random(),
+    rand: random(0, 1),
     row,
     col,
     hue,

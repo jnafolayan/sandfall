@@ -11,7 +11,7 @@ const uuidCache = {};
 const generateUUID = () => {
   let uuid;
   do {
-    uuid = Math.random().toString(16).substring(2);
+    uuid = random(0, 1).toString(16).substring(2);
   } while (uuidCache[uuid]);
 
   uuidCache[uuid] = true;

@@ -17,8 +17,8 @@ localStorage.clear();
 function start() {
   width = window.innerWidth;
   height = window.innerHeight;
-  rows = Math.floor(height / CELL_SIZE);
-  cols = Math.floor(width / CELL_SIZE);
+  rows = Math.round(height / CELL_SIZE);
+  cols = Math.round(width / CELL_SIZE);
 
   grid = makeGrid();
 
